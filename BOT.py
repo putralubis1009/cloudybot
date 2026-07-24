@@ -21,18 +21,22 @@ def run_web():
     port = int(os.environ.get("PORT", 8080))
     app_web.run(host="0.0.0.0", port=port)
 
-# --- 3. SETUP KEPRIBADIAN & SEMUA DAFTAR MODEL ---
+# --- 3. SETUP KEPRIBADIAN & WAKTU REAL-TIME ---
 genai.configure(api_key=GEMINI_API_KEY)
 
-kepribadian = """
+# Tanggal otomatis disesuaikan agar bot tidak salah zaman
+tanggal_sekarang = "Jumat, 24 Juli 2026"
+
+kepribadian = f"""
 Namamu adalah CloudyAI (atau bisa dipanggil Cloudy). 
-Kamu adalah asisten AI Telegram yang ramah, asyik, dan pintar.
-Tugasmu adalah membantu user dengan jawaban yang jelas dan natural.
+Kamu adalah asisten AI Telegram yang ramah, asyik, cerdas, dan memiliki ingatan yang sangat tajam.
+Waktu dan tanggal saat ini adalah: {tanggal_sekarang}. Selalu jadikan tanggal ini sebagai acuan jika user bertanya tentang hari atau tanggal.
+Tugasmu adalah membantu user dengan jawaban yang jelas, akurat, cerdas, dan natural.
 Jangan pernah memperkenalkan dirimu sebagai 'model AI dari Google' kecuali ditanya spesifik.
 Selalu ingat namamu adalah CloudyAI ke siapapun kamu berbicara!
 """
 
-# Daftar seluruh model teks yang kamu miliki, diurutkan dari prioritas utama
+# Daftar seluruh model teks cadangan
 DAFTAR_MODEL = [
     'gemini-3.6-flash',
     'gemini-3.5-flash',
@@ -47,20 +51,35 @@ DAFTAR_MODEL = [
     'gemini-2-flash-lite'
 ]
 
-# --- 4. FUNGSI TELEGRAM DENGAN AUTO-FALLBACK ---
+# Kamus untuk menyimpan sesi obrolan aktif masing-masing user agar memori tidak hilang
+user_sessions = {}
+
+# --- 4. FUNGSI TELEGRAM DENGAN MEMORI & AUTO-FALLBACK ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Halo! Aku Cloudy, bot AI dengan armada model cadangan super lengkap. Ayo ngobrol!")
+    user_id = update.effective_user.id
+    user_sessions[user_id] = None # Reset memori jika mulai dari /start
+    await update.message.reply_text("Halo! Aku Cloudy, asisten AI pintar dengan memori super tajam. Mau ngobrolin apa nih?")
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text
+    user_id = update.effective_user.id
     
     try:
         await context.bot.send_chat_action(chat_id=update.effective_chat.id, action='typing')
         
         respon_berhasil = None
         model_yang_pakai = ""
+        new_session = None
         
-        # Otomatis mencoba model satu per satu dari atas ke bawah jika limit
+        # Ambil riwayat chat sebelumnya jika user sudah pernah ngobrol
+        existing_history = []
+        if user_id in user_sessions and user_sessions[user_id] is not None:
+            try:
+                existing_history = user_sessions[user_id].history
+            except:
+                existing_history = []
+        
+        # Coba model satu per satu dengan membawa riwayat memori obrolan
         for nama_model in DAFTAR_MODEL:
             try:
                 temp_model = genai.GenerativeModel(
@@ -68,19 +87,22 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     system_instruction=kepribadian
                 )
                 
-                chat_session = temp_model.start_chat(history=[])
+                # Masukkan history obrolan lama agar dia tetap ingat
+                chat_session = temp_model.start_chat(history=existing_history)
                 response = chat_session.send_message(user_text)
                 
                 respon_berhasil = response.text
                 model_yang_pakai = nama_model
-                break # Berhenti mencari kalau berhasil
+                new_session = chat_session # Simpan sesi terbaru untuk memori berikutnya
+                break
                 
             except Exception as err:
                 print(f"Model {nama_model} limit/error, beralih ke model berikutnya...", flush=True)
                 continue
         
-        # Kirim jawaban jika ada model yang lolos
+        # Kirim hasil jawaban dan simpan sesi memorinya
         if respon_berhasil:
+            user_sessions[user_id] = new_session
             await update.message.reply_text(respon_berhasil)
             print(f"Sukses merespon menggunakan model: {model_yang_pakai}", flush=True)
         else:
@@ -101,7 +123,7 @@ if __name__ == '__main__':
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
-    print("Bot AI sudah aktif dengan sistem All-Model Fallback!", flush=True)
+    print("Bot AI sudah aktif dengan memori tajam & Auto-Fallback!", flush=True)
     
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
