@@ -5,6 +5,8 @@ from flask import Flask
 import google.generativeai as genai
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+import io
+from PIL import Image
 
 # --- 1. AMBIL KUNCI ---
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
