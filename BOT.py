@@ -25,6 +25,35 @@ def run_web():
 # --- 3. SETUP AI GEMINI ---
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel('gemini-1.5-flash') # Catatan: versi yang valid saat ini biasanya 1.5-flash
+model = genai.GenerativeModel('gemini-3.6-flash')
+
+# Ini adalah "buku catatan" untuk menyimpan riwayat obrolan setiap user
+user_chats = {} 
+
+# --- Ubah Fungsi handle_message menjadi seperti ini ---
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_text = update.message.text
+    user_id = update.effective_user.id # Mengambil ID unik akun Telegram-mu
+    
+    try:
+        await context.bot.send_chat_action(chat_id=update.effective_chat.id, action='typing')
+        
+        # Mengecek apakah user ini sudah punya riwayat chat atau belum
+        if user_id not in user_chats:
+            # Kalau belum, buat sesi chat baru yang punya ingatan (history)
+            user_chats[user_id] = model.start_chat(history=[])
+        
+        # Ambil buku catatan khusus untuk user ini
+        chat_session = user_chats[user_id]
+        
+        # Minta AI membalas pesan berdasarkan riwayat obrolan sebelumnya
+        response = await chat_session.send_message_async(user_text)
+        
+        await update.message.reply_text(response.text)
+        
+    except Exception as e:
+        await update.message.reply_text("Koneksiku sempat terputus sebentar, bisa ulangi pertanyaannya?")
+        print(f"Error: {e}")
 
 # --- 4. FUNGSI TELEGRAM ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
