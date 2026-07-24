@@ -69,7 +69,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Koneksiku sedang sibuk atau terputus. Bisa ulangi pertanyaannya?")
         print(f"Error Text: {e}")
 
-# Fungsi baru untuk membaca foto
+# Fungsi baru untuk membaca foto (Versi Memory-Safe yang Anti-Crash)
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     
@@ -79,9 +79,9 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # 1. Ambil foto resolusi tertinggi
         photo_file = await update.message.photo[-1].get_file()
         
-        # 2. Unduh foto ke memori server
-        photo_bytes = await photo_file.download_as_bytearray()
-        img = Image.open(io.BytesIO(photo_bytes))
+        # 2. Unduh dan simpan sementara foto tersebut di server Render
+        temp_filename = f"temp_{user_id}.jpg"
+        await photo_file.download_to_drive(temp_filename)
         
         # 3. Cek caption (teks yang diketik bersamaan dengan foto)
         prompt = update.message.caption
@@ -94,16 +94,23 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
         chat_session = user_chats[user_id]
         
-        # 4. Kirim gambar dan teks ke Gemini (gambar masuk ke dalam ingatan obrolan!)
-        response = await chat_session.send_message_async([prompt, img])
+        # 4. Upload foto ke sistem File Google (ini cara paling aman agar tidak crash!)
+        uploaded_image = genai.upload_file(temp_filename)
         
-        # 5. Balas ke Telegram
+        # 5. Kirim gambar dan teks ke Gemini (sekarang memori obrolan aman)
+        response = await chat_session.send_message_async([prompt, uploaded_image])
+        
+        # 6. Balas ke Telegram
         await update.message.reply_text(response.text)
+        
+        # 7. Hapus foto sementara dari server Render agar memori tidak penuh
+        if os.path.exists(temp_filename):
+            os.remove(temp_filename)
         
     except Exception as e:
         await update.message.reply_text("Aduh, mataku agak buram nih. Gagal memproses gambar, coba kirim ulang ya!")
         print(f"Error Gambar: {e}")
-
+        
 # --- 5. JALANKAN BOT ---
 if __name__ == '__main__':
     print("Membangunkan server web dan bot...")
