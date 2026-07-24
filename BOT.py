@@ -23,6 +23,9 @@ def run_web():
     port = int(os.environ.get("PORT", 8080))
     app_web.run(host="0.0.0.0", port=port)
 
+# --- 3. SETUP GEMINI & KEPRIBADIAN ---
+genai.configure(api_key=GEMINI_API_KEY)
+
 # Tulis identitas permanen bot di sini
 kepribadian = """
 Namamu adalah CloudyAI (atau bisa dipanggil Cloudy). 
@@ -38,6 +41,7 @@ model = genai.GenerativeModel(
     system_instruction=kepribadian
 )
 
+# Memori untuk menyimpan obrolan masing-masing user
 user_chats = {}
 
 # --- 4. FUNGSI TELEGRAM ---
@@ -51,32 +55,74 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         await context.bot.send_chat_action(chat_id=update.effective_chat.id, action='typing')
         
+        # Jika user baru pertama kali chat, buatkan kotak memori obrolan baru
         if user_id not in user_chats:
             user_chats[user_id] = model.start_chat(history=[])
             
         chat_session = user_chats[user_id]
+        
+        # Kirim pesan teks dengan fitur ingatan (history)
         response = await chat_session.send_message_async(user_text)
         await update.message.reply_text(response.text)
         
     except Exception as e:
         await update.message.reply_text("Koneksiku sedang sibuk atau terputus. Bisa ulangi pertanyaannya?")
-        print(f"Error: {e}")
+        print(f"Error Text: {e}")
+
+# Fungsi baru untuk membaca foto
+async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    
+    try:
+        await context.bot.send_chat_action(chat_id=update.effective_chat.id, action='typing')
+        
+        # 1. Ambil foto resolusi tertinggi
+        photo_file = await update.message.photo[-1].get_file()
+        
+        # 2. Unduh foto ke memori server
+        photo_bytes = await photo_file.download_as_bytearray()
+        img = Image.open(io.BytesIO(photo_bytes))
+        
+        # 3. Cek caption (teks yang diketik bersamaan dengan foto)
+        prompt = update.message.caption
+        if not prompt:
+            prompt = "Tolong jelaskan secara detail apa yang ada di dalam gambar ini."
+            
+        # Pastikan kotak memori user sudah ada
+        if user_id not in user_chats:
+            user_chats[user_id] = model.start_chat(history=[])
+            
+        chat_session = user_chats[user_id]
+        
+        # 4. Kirim gambar dan teks ke Gemini (gambar masuk ke dalam ingatan obrolan!)
+        response = await chat_session.send_message_async([prompt, img])
+        
+        # 5. Balas ke Telegram
+        await update.message.reply_text(response.text)
+        
+    except Exception as e:
+        await update.message.reply_text("Aduh, mataku agak buram nih. Gagal memproses gambar, coba kirim ulang ya!")
+        print(f"Error Gambar: {e}")
 
 # --- 5. JALANKAN BOT ---
 if __name__ == '__main__':
     print("Membangunkan server web dan bot...")
     
+    # Jalankan server web dummy
     t = threading.Thread(target=run_web)
     t.start()
     
+    # Setup bot Telegram
     app = Application.builder().token(TELEGRAM_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
+    
+    # Daftarkan penangkap TEKS dan FOTO
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     
     print("Bot AI sudah aktif!")
     
     # --- FIX UTAMA UNTUK PYTHON VERSI BARU ---
-    # Kita buatkan jalur antrean secara manual agar Telegram tidak bingung
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     
