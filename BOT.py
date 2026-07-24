@@ -21,9 +21,20 @@ def run_web():
     port = int(os.environ.get("PORT", 8080))
     app_web.run(host="0.0.0.0", port=port)
 
-# --- 3. SETUP GEMINI & MEMORI OBROLAN ---
-genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel('gemini-3.6-flash')
+# Tulis identitas permanen bot di sini
+kepribadian = """
+Namamu adalah CloudyAI (atau bisa dipanggil Cloudy). 
+Kamu adalah asisten AI Telegram yang ramah, asyik, dan pintar.
+Tugasmu adalah membantu user dengan jawaban yang jelas dan natural.
+Jangan pernah memperkenalkan dirimu sebagai 'model AI dari Google' kecuali ditanya spesifik.
+Selalu ingat namamu adalah CloudyAI ke siapapun kamu berbicara!
+"""
+
+# Masukkan kepribadian tersebut ke dalam otak Gemini
+model = genai.GenerativeModel(
+    'gemini-3.6-flash',
+    system_instruction=kepribadian
+)
 
 user_chats = {}
 
